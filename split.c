@@ -36,22 +36,34 @@
 
 #include <stdio.h>
 #include <unistd.h>
-#include <termios.h>
+#if defined(WIN32)
+# include <windows.h>
+#else
+# include <termios.h>
+#endif
 #include <string.h>
 #include <libgen.h>
 
 #include <openssl/err.h>
 #include <openssl/pem.h>
 #include <openssl/pkcs12.h>
-
+#if defined(WIN32)
+# include <openssl/applink.c>
+#endif
 
 /* Ask for a password using `prompt' as a prompt and store the result
    in `buffer' which is allocated by the function. Return 0 on
    success, -1 on error. */
 int
 getpassword(const char *prompt, char **buffer) {
+#if defined(WIN32)
+  HANDLE hstdin = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD mode, nb;
+#else
   struct termios tty;
   tcflag_t c_lflag;
+#endif
   int i, c, buflen;
 
   if (!buffer) {
@@ -65,6 +77,20 @@ getpassword(const char *prompt, char **buffer) {
     return -1;
 
   /* Prompt + terminal initialization */
+#if defined(WIN32)
+  if ((hstdin == INVALID_HANDLE_VALUE) ||
+      (hstdout == INVALID_HANDLE_VALUE)) {
+    fprintf(stderr, "[!] Unable to access console\n");
+    return -1;
+  }
+  WriteConsole(hstdout, prompt, strlen(prompt), &nb, NULL);
+  if (!GetConsoleMode(hstdin, &mode))
+    return -1;
+
+  if (!SetConsoleMode(hstdin,
+		      mode & ENABLE_PROCESSED_INPUT & ~ENABLE_ECHO_INPUT))
+      return -1;
+#else
   fprintf(stderr, "%s", prompt);
   if (tcgetattr(STDIN_FILENO, &tty) < 0)
     return -1;
@@ -72,27 +98,44 @@ getpassword(const char *prompt, char **buffer) {
   tty.c_lflag &= ~(ICANON | ECHO);
   if (tcsetattr(STDIN_FILENO, 0, &tty) < 0)
     return -1;
+#endif
 
   /* Read the password */
-  for (i = c = 0; ((c = getchar()) != '\n') && (c != EOF); ++i) {
+  i = c = 0;
+  while (1) {
+#if defined(WIN32)
+    if (!ReadConsole(hstdin, &c, 1, &nb, NULL))
+      break;
+#else
+    c = getchar();
+#endif
+    if ((c == EOF) || (c == '\n') || (c == '\r'))
+      break;
     if (i >= buflen) {
       buflen *= 2;
-      if (!realloc(*buffer, buflen))
-	goto endpassword;
+      if (!realloc(*buffer, buflen)) {
+	free(buffer); buffer = NULL;
+	break;
+      }
     }
+#if defined(WIN32)
+    WriteConsole(hstdout, "*", 1, &nb, NULL);
+#else
     putchar('*');
+#endif
     (*buffer)[i] = c;
+    i++;
   }
+  (*buffer)[i] = '\0';
+#if defined(WIN32)
+  WriteConsole(hstdout, "\n", 1, &nb, NULL);
+  SetConsoleMode(hstdin, mode);
+#else
   putchar('\n');
   tty.c_lflag = c_lflag;
   tcsetattr(STDIN_FILENO, 0, &tty);
-  (*buffer)[i+1] = '\0';
-  return 0;
- endpassword:
-  free(buffer);
-  tty.c_lflag = c_lflag;
-  tcsetattr(STDIN_FILENO, 0, &tty);
-  return -1;
+#endif
+  return (buffer == NULL)?-1:0;
 }
 
 int
@@ -117,16 +160,15 @@ main(int argc, char **argv) {
 
   printf("[+] Opening PKCS#12 certificate\n");
   if (!(fp = fopen(argv[1], "r"))) {
-    fprintf(stderr, "[!] Unable to open certificate `%s': %m\n", argv[1]);
+    fprintf(stderr, "[!] Unable to open certificate `%s'\n", argv[1]);
     goto endpkcs12;
   }
 
   if (chdir(dirname(argv[1])) == -1) {
-    fprintf(stderr, "[!] Unable to change directory to `%s': %m\n",
+    fprintf(stderr, "[!] Unable to change directory to `%s'\n",
 	    dirname(argv[1]));
     goto endpkcs12;
   }
-
   p12 = d2i_PKCS12_fp(fp, NULL);
   fclose(fp); fp = NULL;
   if (!p12) {
@@ -152,7 +194,7 @@ main(int argc, char **argv) {
 #define PEM_w(path, call) \
   do {									\
     if (!(fp = fopen(path, "w"))) {					\
-      fprintf(stderr, "[!] Unable to open `%s': %m\n", path);		\
+      fprintf(stderr, "[!] Unable to open `%s'\n", path);		\
       goto endpkcs12;							\
     }									\
     printf("[+] Write certificate to `%s'\n", path);			\

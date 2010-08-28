@@ -14,7 +14,7 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES(yes)])
 AC_PROG_CC
 
 # OpenSSL
-PKG_CHECK_MODULES(OpenSSL, openssl,
+PKG_CHECK_MODULES(OpenSSL, [openssl >= 0.9.8],
 		CFLAGS="$CFLAGS `pkg-config --cflags openssl`";
 		LIBS="$LIBS `pkg-config --libs openssl`",
 		[AC_MSG_FAILURE(OpenSSL is not found.)])

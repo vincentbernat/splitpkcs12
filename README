@@ -1,0 +1,35 @@
+Installation
+------------
+
+This small utility uses autoconf:
+ ./configure && make
+ sudo make install
+
+If you want to cross-compile using mingw32, install the following
+packages on Fedora 11:
+ mingw32-binutils mingw32-cpp mingw32-filesystem mingw32-gcc
+ mingw32-openssl mingw32-openssl-static mingw32-runtime mingw32-zlib
+ mingw32-zlib-static
+
+Then:
+ mingw32-configure LDFLAGS=-static
+ make
+
+On other distributions, use mock to get a Fedora 11 environment:
+ mock --init -r fedora-11-i386
+ mock --install mingw32-binutils mingw32-cpp mingw32-filesystem \
+    mingw32-gcc mingw32-openssl mingw32-openssl-static \
+    mingw32-runtime mingw32-zlib \
+    mingw32-zlib-static -r fedora-11-i386
+ mock --shell -r fedora-11-i386
+
+Use
+---
+
+This utility should be run with the PKCS#12 certificate as first
+argument. It will ask the password if necessary. The three components
+are written in the same directory than the original certificate using
+the following names:
+ - user.pem
+ - user.key
+ - certs.pem
